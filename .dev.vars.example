@@ -1,0 +1,16 @@
+# ローカル実行（npx wrangler dev）用の秘密情報。
+# このファイルを .dev.vars という名前でコピーして値を埋める。.dev.vars は Git に含めない。
+#
+# 本番（Cloudflare 上）では代わりに次を実行して登録する:
+#   npx wrangler secret put ANTHROPIC_API_KEY
+#   npx wrangler secret put ACCESS_PASSWORD
+#   npx wrangler secret put SESSION_SECRET   （任意）
+
+# Anthropic の API キー（https://console.anthropic.com/ で発行）
+ANTHROPIC_API_KEY=sk-ant-...
+
+# アプリを開いた人に入力してもらう合言葉（ログインパスワード）
+ACCESS_PASSWORD=change-me
+
+# ログインCookieの署名に使う秘密の文字列（任意。未設定なら合言葉から導出）
+# SESSION_SECRET=any-long-random-string
