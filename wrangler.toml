@@ -1,0 +1,35 @@
+# 現場写真AI-KY支援アプリ（公開デモ）— Cloudflare Workers 設定
+#
+# 配置手順は README.md を参照。
+# 秘密情報（APIキー・合言葉）はこのファイルに書かず `wrangler secret put` で登録する。
+
+name = "ky-maker"
+main = "src/worker.js"
+compatibility_date = "2026-09-01"
+
+# 静的ファイル（public/ 以下）を同じWorkerから配信する。
+# /api/* だけを Worker 本体で処理し、それ以外は静的ファイルをそのまま返す。
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+# 1日あたりの利用回数を数えるための KV。
+#   npx wrangler kv namespace create RATE_KV
+# を実行し、表示された id をここに貼る。
+[[kv_namespaces]]
+binding = "RATE_KV"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+[vars]
+# 使用するモデル。費用を抑えたい場合は "claude-sonnet-5" に変更する。
+CLAUDE_MODEL = "claude-opus-5"
+# 1日（日本時間）のAI呼び出し上限。写真1枚のKY作成で2回（目視＋KY案）消費する。
+DAILY_LIMIT = "60"
+# 同一IPアドレスからの1日のAI呼び出し上限。
+DAILY_LIMIT_PER_IP = "12"
+# ログインセッションの有効時間（秒）。既定は12時間。
+SESSION_TTL_SEC = "43200"
+
+[observability]
+enabled = true

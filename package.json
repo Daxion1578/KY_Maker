@@ -1,0 +1,17 @@
+{
+  "name": "ky-maker",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "現場写真AI-KY支援アプリ（公開デモ）— Cloudflare Workers + Claude API",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test test/",
+    "check": "node scripts/check.mjs",
+    "e2e": "node test/e2e.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.40.0"
+  }
+}
