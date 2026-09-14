@@ -77,13 +77,16 @@ function intVar(env, name, dflt) {
 async function readJson(req) {
   const len = parseInt(req.headers.get('content-length') || '0', 10);
   if (len > MAX_BODY_BYTES) throw new HttpError(413, '送信データが大きすぎます。');
-  const text = await req.text();
-  if (text.length > MAX_BODY_BYTES) throw new HttpError(413, '送信データが大きすぎます。');
+  const buf = await req.arrayBuffer();
+  if (buf.byteLength > MAX_BODY_BYTES) throw new HttpError(413, '送信データが大きすぎます。');
+  const text = new TextDecoder().decode(buf);
   try { return JSON.parse(text || '{}'); }
   catch (e) { throw new HttpError(400, 'リクエストの形式が不正です。'); }
 }
 class HttpError extends Error {
-  constructor(status, message, extra) { super(message); this.status = status; this.extra = extra; }
+  constructor(status, message, extra, unbilled) {
+    super(message); this.status = status; this.extra = extra; this.unbilled = !!unbilled;
+  }
 }
 
 /* ---------- セッション ---------- */
@@ -150,7 +153,7 @@ async function consume(env, ip) {
 /* messages API を1回呼び、構造化出力（JSON）を返す。
    thinking は既定（adaptive）に任せ、effort で深さを調整する。 */
 export async function callClaude(env, opt) {
-  if (!env.ANTHROPIC_API_KEY) throw new HttpError(503, 'サーバーにAPIキーが設定されていません（ANTHROPIC_API_KEY）。');
+  if (!env.ANTHROPIC_API_KEY) throw new HttpError(503, 'サーバーにAPIキーが設定されていません（ANTHROPIC_API_KEY）。', null, true);
   const model = env.CLAUDE_MODEL || 'claude-opus-5';
   const body = {
     model,
@@ -182,7 +185,7 @@ export async function callClaude(env, opt) {
   } catch (e) {
     clearTimeout(timer);
     if (e && e.name === 'AbortError') throw new HttpError(504, 'AIの応答が時間内に返りませんでした。もう一度お試しください。');
-    throw new HttpError(502, 'AIへ接続できませんでした。');
+    throw new HttpError(502, 'AIへ接続できませんでした。', null, true);
   }
   clearTimeout(timer);
   const ms = Date.now() - t0;
@@ -192,7 +195,8 @@ export async function callClaude(env, opt) {
     const msg = (data && data.error && data.error.message) ? String(data.error.message).slice(0, 300) : ('HTTP ' + res.status);
     const map = { 401: 'サーバーのAPIキーが無効です。', 429: 'AI側の利用制限に達しました。しばらく待ってからお試しください。',
                   529: 'AI側が混雑しています。しばらく待ってからお試しください。' };
-    throw new HttpError(502, (map[res.status] || 'AIの呼び出しに失敗しました。') + '（' + msg + '）');
+    const unbilled = res.status === 401 || res.status === 429 || res.status >= 500;
+    throw new HttpError(502, (map[res.status] || 'AIの呼び出しに失敗しました。') + '（' + msg + '）', null, unbilled);
   }
   if (!data || !Array.isArray(data.content)) throw new HttpError(502, 'AIの応答を読み取れませんでした。');
   if (data.stop_reason === 'refusal') {
@@ -226,7 +230,7 @@ function sizeOf(v) { return JSON.stringify(v == null ? '' : v).length; }
 function validateVision(b) {
   if (!isPlainObject(b) || !isPlainObject(b.image)) throw new HttpError(400, '写真データがありません。');
   const mt = String(b.image.media_type || '');
-  if (IMAGE_TYPES.indexOf(mt) < 0) throw new HttpError(400, '対応していない画像形式です（JPEG／PNG／WebP）。');
+  if (IMAGE_TYPES.indexOf(mt) < 0) throw new HttpError(400, '対応していない画像形式です（JPEG／PNG／WebP／GIF）。');
   const d = String(b.image.data || '');
   if (!d) throw new HttpError(400, '写真データが空です。');
   if (d.length > MAX_IMAGE_B64) throw new HttpError(413, '写真データが大きすぎます。解析モードを下げるか、写真を撮り直してください。');
@@ -313,11 +317,17 @@ async function handleApi(req, env, url) {
   if (rem.ip <= 0) return fail(429, '本日の利用上限（この接続元 ' + rem.limits.ip + '回）に達しました。', { remaining: rem });
 
   const body = await readJson(req);
+  /* 入力検証で弾いた場合は消費しない。AIへ到達しなかった失敗（設定不備・接続不能・上流の
+     401/429/5xx）も消費しない。それ以外（成功、refusal、max_tokens、応答の読み取り失敗）は
+     AI側で処理が走り課金され得るため消費する。 */
   let result;
+  const run = async (fn) => {
+    try { const r = await fn(); await consume(env, ip); return r; }
+    catch (e) { if (!(e instanceof HttpError) || !e.unbilled) await consume(env, ip); throw e; }
+  };
   if (path === '/api/vision') {
     const v = validateVision(body);
-    await consume(env, ip);
-    result = await callClaude(env, {
+    result = await run(() => callClaude(env, {
       system: VISION_SYSTEM,
       messages: [{ role: 'user', content: [
         { type: 'image', source: { type: 'base64', media_type: v.media_type, data: v.data } },
@@ -326,17 +336,16 @@ async function handleApi(req, env, url) {
       schema: OBS_JSON_SCHEMA,
       effort: 'medium',
       maxTokens: 8000
-    });
+    }));
   } else {
     const p = validateKy(body);
-    await consume(env, ip);
-    result = await callClaude(env, {
+    result = await run(() => callClaude(env, {
       system: p.stage === 'vision' ? KY_SYSTEM_VISION : KY_SYSTEM_TEXT,
       messages: [{ role: 'user', content: buildKyUserText(p) }],
       schema: KY_JSON_SCHEMA,
       effort: 'high',
       maxTokens: 16000
-    });
+    }));
   }
   const after = await remaining(env, ip);
   return json({ ok: true, data: result.data, model: result.model, usage: result.usage, ms: result.ms, remaining: after });
