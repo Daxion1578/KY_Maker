@@ -19,7 +19,7 @@ run_worker_first = ["/api/*"]
 # を実行し、表示された id をここに貼る。
 [[kv_namespaces]]
 binding = "RATE_KV"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "78ed4965206c4bfdb026716613c87ed0"
 
 [vars]
 # 使用するモデル。費用を抑えたい場合は "claude-sonnet-5" に変更する。

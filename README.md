@@ -36,13 +36,11 @@ npm install
 npx wrangler login
 ```
 
-3. 利用回数を数えるためのデータベース（KV）を作成します。
+3. 利用回数を数えるためのデータベース（KV）を作成します。このリポジトリの `wrangler.toml` には作成済みのKV（title: RATE_KV）の id が入っています。別のアカウントで配置する場合だけ、次を実行して表示された `id` の値で `wrangler.toml` の `[[kv_namespaces]]` の `id` を置き換えてください。
 
 ```
 npx wrangler kv namespace create RATE_KV
 ```
-
-実行すると `id = "..."` という表示が出ます。その `id` の値を `wrangler.toml` の `REPLACE_WITH_YOUR_KV_NAMESPACE_ID` という部分に貼り付けて保存してください。
 
 4. 秘密情報（APIキーと合言葉）を登録します。それぞれ実行すると値の入力を求められます。
 
